@@ -57,6 +57,7 @@ D3 D4 :UT switches serving satellite due to LEO movement
 - [X] servedSatId
 - [X] handover
 - [X] [UT Serving Satellite & Handover](https://github.com/yuru1231/BMW_LAB_WENCHUN/blob/ac15f5545942fd628a672eb2bd8c1c8dbbb57311/Notes/LEOs/UT%20Serving%20Satellite%20%26%20Handover%20.md)
+
 D5 Beam / Beam ID
 - [ ] Beam footprint 隨衛星移動
 
