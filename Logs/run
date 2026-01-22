@@ -1,0 +1,54 @@
+Times: 720
+Coverage points: 438 / 720 (ratio=0.608) using ELEV_MIN_DEG=10.0
+served_sat_timeseries.csv rows: 720
+handover_events.csv rows: 50
+Wrote: served_sat_timeseries.csv, handover_events.csv, max_elevation_per_time.csv
+=== D3 metrics ===
+coverage_ratio= 0.608333
+unique_servedSatId= 49
+=== D3 sample head/tail (time servedSat elev numCand) ===
+0.0 -1 nan 0
+10.0 -1 nan 0
+20.0 -1 nan 0
+30.0 -1 nan 0
+40.0 -1 nan 0
+50.0 -1 nan 0
+60.0 -1 nan 0
+70.0 -1 nan 0
+80.0 -1 nan 0
+90.0 -1 nan 0
+7100.0 11 38.40189719263294 6
+7110.0 11 39.680427757635236 6
+7120.0 11 40.693889831716106 5
+7130.0 11 41.38147829706949 5
+7140.0 11 41.69731418708412 5
+7150.0 11 41.61895224765948 5
+7160.0 11 41.151982410452625 5
+7170.0 11 40.328831175817434 6
+7180.0 11 39.20237229891507 6
+7190.0 10 39.341029179361435 6
+=== D4 metrics ===
+overlap_ratio= 0.577778
+total_handovers= 50
+sat_to_sat_handovers= 47
+=== D4 sat-to-sat handover sample (head) ===
+time,utId,oldSatId,newSatId,reason
+2950.0,0,57,56,max_elevation_changed
+3040.0,0,56,55,max_elevation_changed
+3130.0,0,55,54,max_elevation_changed
+3220.0,0,54,53,max_elevation_changed
+3320.0,0,53,52,max_elevation_changed
+3410.0,0,52,51,max_elevation_changed
+3500.0,0,51,50,max_elevation_changed
+3590.0,0,50,49,max_elevation_changed
+3690.0,0,49,48,max_elevation_changed
+3780.0,0,48,47,max_elevation_changed
+3870.0,0,47,46,max_elevation_changed
+3960.0,0,46,45,max_elevation_changed
+4060.0,0,45,44,max_elevation_changed
+4150.0,0,44,43,max_elevation_changed
+4240.0,0,43,42,max_elevation_changed
+4330.0,0,42,41,max_elevation_changed
+4430.0,0,41,40,max_elevation_changed
+4520.0,0,40,39,max_elevation_changed
+4610.0,0,39,38,max_elevation_changed
