@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+UT serving satellite precheck (LLA input)
+Input CSV format:
+    time,satId,lat,lon,alt
+
+Outputs:
+  1) served_sat_timeseries.csv
+     time,utId,servedSatId,elev_deg,dist_km,numCandidates
+  2) handover_events.csv
+     time,utId,oldSatId,newSatId,reason
+  3) max_elevation_per_time.csv   (DIAG)
+     time,bestSatId,maxElev_deg,dist_km
+
+Notes:
+- Uses spherical Earth approximation for consistency with your minimal LEO generator.
+- Serving decision: max elevation among candidates with elev >= ELEV_MIN_DEG.
+- If no candidate: servedSatId = -1.
+"""
+
+import csv
+import math
+import sys
+from collections import defaultdict
+from typing import Dict, List, Tuple, Optional
+
+# =========================
+# User Config (edit here)
+# =========================
+ELEV_MIN_DEG = 10.0      # visibility threshold, try 0/5/10/20/30
+UT_ID = 0
+UT_LAT_DEG = 25.0330     # Taipei default; for debug you can set to sat subpoint at t=0
+UT_LON_DEG = 121.5654
+UT_ALT_M = 0.0
+
+# Earth model (spherical) - keep consistent with your minimal model
+RE = 6378137.0
+
+
+def deg2rad(d: float) -> float:
+    return d * math.pi / 180.0
+
+
+def lla_to_ecef(lat_deg: float, lon_deg: float, alt_m: float) -> Tuple[float, float, float]:
+    lat = deg2rad(lat_deg)
+    lon = deg2rad(lon_deg)
+    r = RE + alt_m
+    x = r * math.cos(lat) * math.cos(lon)
+    y = r * math.cos(lat) * math.sin(lon)
+    z = r * math.sin(lat)
+    return x, y, z
+
+
+def ecef_to_enu(dx: float, dy: float, dz: float, lat_deg: float, lon_deg: float) -> Tuple[float, float, float]:
+    lat = deg2rad(lat_deg)
+    lon = deg2rad(lon_deg)
+    slat, clat = math.sin(lat), math.cos(lat)
+    slon, clon = math.sin(lon), math.cos(lon)
+
+    e = -slon * dx + clon * dy
+    n = -slat * clon * dx - slat * slon * dy + clat * dz
+    u =  clat * clon * dx + clat * slon * dy + slat * dz
+    return e, n, u
+
+
+def elev_deg_from_enu(e: float, n: float, u: float) -> float:
+    horiz = math.sqrt(e * e + n * n)
+    elev = math.atan2(u, horiz)
+    return elev * 180.0 / math.pi
+
+
+def dist_km(dx: float, dy: float, dz: float) -> float:
+    return math.sqrt(dx * dx + dy * dy + dz * dz) / 1000.0
+
+
+def load_positions_lla(csv_path: str) -> Dict[float, List[Tuple[int, float, float, float]]]:
+    rows_by_t: Dict[float, List[Tuple[int, float, float, float]]] = defaultdict(list)
+
+    with open(csv_path, newline="") as f:
+        r = csv.reader(f)
+        header = next(r, None)
+        if header is None or len(header) < 5:
+            raise ValueError("CSV header missing or invalid. Expect: time,satId,lat,lon,alt")
+
+        for row in r:
+            if not row or len(row) < 5:
+                continue
+
+            t = float(row[0])
+            sid = int(row[1])
+            lat = float(row[2])
+            lon = float(row[3])
+            alt = float(row[4])
+
+            x, y, z = lla_to_ecef(lat, lon, alt)
+            rows_by_t[t].append((sid, x, y, z))
+
+    return rows_by_t
+
+
+def main() -> int:
+    if len(sys.argv) < 2:
+        print("Usage: python3 ut_serving_precheck_lla_full.py <leo_positions.csv>")
+        return 2
+
+    pos_path = sys.argv[1]
+
+    utx, uty, utz = lla_to_ecef(UT_LAT_DEG, UT_LON_DEG, UT_ALT_M)
+
+    rows_by_t = load_positions_lla(pos_path)
+    times = sorted(rows_by_t.keys())
+    if not times:
+        print("No data rows found.")
+        return 1
+
+    served_out: List[Tuple[float, int, int, float, float, int]] = []
+    handover_out: List[Tuple[float, int, int, int, str]] = []
+    maxelev_out: List[Tuple[float, int, float, float]] = []
+
+    prev_sid: Optional[int] = None
+    no_cov = 0
+    cov = 0
+
+    for t in times:
+        candidates: List[Tuple[float, int, float]] = []  # (elev, sid, dist_km)
+        best_any: Optional[Tuple[float, int, float]] = None
+
+        for sid, x, y, z in rows_by_t[t]:
+            dx, dy, dz = x - utx, y - uty, z - utz
+            e, n, u = ecef_to_enu(dx, dy, dz, UT_LAT_DEG, UT_LON_DEG)
+            elev = elev_deg_from_enu(e, n, u)
+            dkm = dist_km(dx, dy, dz)
+
+            if best_any is None or elev > best_any[0] or (elev == best_any[0] and sid < best_any[1]):
+                best_any = (elev, sid, dkm)
+
+            if elev >= ELEV_MIN_DEG:
+                candidates.append((elev, sid, dkm))
+
+        if best_any is None:
+            maxelev_out.append((t, -1, float("nan"), float("nan")))
+        else:
+            maxelev_out.append((t, best_any[1], best_any[0], best_any[2]))
+
+        if not candidates:
+            served_sid = -1
+            served_elev = float("nan")
+            served_dist = float("nan")
+            num_cand = 0
+            no_cov += 1
+        else:
+            candidates.sort(key=lambda x: (x[0], -x[1]), reverse=True)
+            served_elev, served_sid, served_dist = candidates[0]
+            num_cand = len(candidates)
+            cov += 1
+
+        served_out.append((t, UT_ID, served_sid, served_elev, served_dist, num_cand))
+
+        if prev_sid is None:
+            prev_sid = served_sid
+        else:
+            if served_sid != prev_sid:
+                handover_out.append((t, UT_ID, prev_sid, served_sid, "max_elevation_changed"))
+                prev_sid = served_sid
+
+    with open("served_sat_timeseries.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["time", "utId", "servedSatId", "elev_deg", "dist_km", "numCandidates"])
+        w.writerows(served_out)
+
+    with open("handover_events.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["time", "utId", "oldSatId", "newSatId", "reason"])
+        w.writerows(handover_out)
+
+    with open("max_elevation_per_time.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["time", "bestSatId", "maxElev_deg", "dist_km"])
+        w.writerows(maxelev_out)
+
+    total = len(times)
+    ratio = (cov / total) if total else 0.0
+    print(f"Times: {total}")
+    print(f"Coverage points: {cov} / {total} (ratio={ratio:.3f}) using ELEV_MIN_DEG={ELEV_MIN_DEG}")
+    print(f"served_sat_timeseries.csv rows: {len(served_out)}")
+    print(f"handover_events.csv rows: {len(handover_out)}")
+    print("Wrote: served_sat_timeseries.csv, handover_events.csv, max_elevation_per_time.csv")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
