@@ -21,8 +21,8 @@
 - M1: `https://github.com/bmw-ntust-internship/Lucy/blob/20b96d1d8f2ea04545828af6ef74fe4e57892e4b/Notes/Midterm%20Project.md`
 
 **Deliverables:**
-- [X] Screenshot/Log of successful [SNS3 build](https://github.com/bmw-ntust-internship/Lucy/blob/a3463c1a262384c92098ff67dad94e33f849ab0b/Notes/Standard%20satellite%20example%20run.md).
-- [X] Output file from a standard [DVB-S2 simulation] (e.g., sim-results.txt) proving the simulator runs.
+- [X] Screenshot/Log of successful [SNS3 build](https://github.com/yuru1231/BMW_LAB_WENCHUN/blob/ac15f5545942fd628a672eb2bd8c1c8dbbb57311/Notes/SNS3%20build.md).
+
 
 ## Week 2 — Progress Confirmation & Understanding Model
 **Target Outputs:**
@@ -33,7 +33,8 @@
 
 
 **Deliverables:**
-- [X] Beam Hopping Simulation Log (showing beams switching active states).
+- [X] [Beam Hopping Simulation ](https://github.com/yuru1231/BMW_LAB_WENCHUN/blob/ac15f5545942fd628a672eb2bd8c1c8dbbb57311/Notes/Beam-Hopping%20Simulation%20experiment.md) (showing beams switching active states).
+- [X] [Beam Hopping Simulation Log.md](https://github.com/yuru1231/BMW_LAB_WENCHUN/blob/ac15f5545942fd628a672eb2bd8c1c8dbbb57311/Notes/Beam%20Hopping%20Simulation%20Log.md)
 - [X] Throughput Graph: Plot showing capacity shifting between beams over time.
 - [X] Short Summary: "Beam Hopping verification.
 
@@ -47,15 +48,15 @@
 -[ ] Generated dataset folder (containing isls.txt, gsls.txt, routes.txt).
 
 ## Week 3(Renew) - Set GEO statellite to LEOs
-D1 D2:[Satellite longitude changes over time, confirming LEO mobility](https://github.com/bmw-ntust-internship/Lucy/blob/147eaa7075247fad0627e82e06362ddbd7f7164b/Notes/Satellite%20longitude%20changes%20over%20time%2C%20confirming%20LEO%20mobility.md)
+D1 D2:[Satellite longitude changes over time, confirming LEO mobility](https://github.com/yuru1231/BMW_LAB_WENCHUN/blob/ac15f5545942fd628a672eb2bd8c1c8dbbb57311/Notes/LEOs/Satellite%20longitude%20changes%20over%20time%2C%20confirming%20LEO%20mobility.md)
 - [X] Run Multiple LEOs
 - [X] Orbit / Mobility
 
 D3 D4 :UT switches serving satellite due to LEO movement
-- [ ] UT 不是永遠被同一顆衛星服務
-- [ ] servedSatId
-- [ ] handover
-
+- [X] [UT 不是永遠被同一顆衛星服務](https://github.com/yuru1231/BMW_LAB_WENCHUN/blob/ac15f5545942fd628a672eb2bd8c1c8dbbb57311/Notes/LEOs/UT%20switches%20serving%20satellite%20due%20to%20LEO%20movement.md)
+- [X] servedSatId
+- [X] handover
+- [X] [UT Serving Satellite & Handover](https://github.com/yuru1231/BMW_LAB_WENCHUN/blob/ac15f5545942fd628a672eb2bd8c1c8dbbb57311/Notes/LEOs/UT%20Serving%20Satellite%20%26%20Handover%20.md)
 D5 Beam / Beam ID
 - [ ] Beam footprint 隨衛星移動
 
@@ -64,8 +65,7 @@ D5 Beam / Beam ID
 - Thesis title 
 - Output parsing / validation notes
 
-**Study Note Link:**
-- M4: `z`
+
 
 **Deliverables:**
 - [ ] Successful build log of the Hypatia ns-3 module.
