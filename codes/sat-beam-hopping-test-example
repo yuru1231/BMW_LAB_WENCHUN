@@ -1,0 +1,110 @@
+#include "ns3/core-module.h"
+#include <cmath>
+#include <fstream>
+#include <iomanip>
+
+using namespace ns3;
+
+// ---- Constants (WGS84-ish) ----
+static const double kMu = 3.986004418e14;        // Earth gravitational parameter [m^3/s^2]
+static const double kRe = 6378137.0;             // Earth equatorial radius [m]
+static const double kOmegaE = 7.2921159e-5;      // Earth rotation rate [rad/s]
+
+// Simple ECEF->LLA (lat/lon/alt) using spherical approximation (good enough for “it moves” proof)
+static void EcefToLla(double x, double y, double z, double &latDeg, double &lonDeg, double &altM)
+{
+  const double r = std::sqrt(x*x + y*y + z*z);
+  const double lat = std::asin(z / r);
+  const double lon = std::atan2(y, x);
+  latDeg = lat * 180.0 / M_PI;
+  lonDeg = lon * 180.0 / M_PI;
+  altM = r - kRe;
+}
+
+// Circular orbit position in ECEF for given t, altitude, inclination, and phase offset.
+// Model: ECI circular orbit -> rotate by inclination -> rotate Earth to ECEF
+static void OrbitEcef(double tSec, double altM, double incRad, double phaseRad,
+                      double &x, double &y, double &z)
+{
+  const double r = kRe + altM;
+  const double n = std::sqrt(kMu / (r*r*r));        // mean motion [rad/s]
+  const double theta = n * tSec + phaseRad;         // true anomaly (circular)
+
+  // ECI in orbital plane (x', y', z'=0)
+  double x_orb = r * std::cos(theta);
+  double y_orb = r * std::sin(theta);
+  double z_orb = 0.0;
+
+  // Rotate by inclination about X-axis (to tilt orbit plane)
+  double x_eci = x_orb;
+  double y_eci = y_orb * std::cos(incRad) - z_orb * std::sin(incRad);
+  double z_eci = y_orb * std::sin(incRad) + z_orb * std::cos(incRad);
+
+  // Convert ECI -> ECEF by rotating around Z with Earth rotation
+  double gst = kOmegaE * tSec;
+  x =  x_eci * std::cos(gst) + y_eci * std::sin(gst);
+  y = -x_eci * std::sin(gst) + y_eci * std::cos(gst);
+  z =  z_eci;
+}
+
+static void LogPositions(std::ofstream *csv,
+                         uint32_t nSats,
+                         double altM,
+                         double incRad,
+                         double tSec,
+                         double stepSec)
+{
+  for (uint32_t satId = 0; satId < nSats; ++satId)
+  {
+    // Spread satellites by phase
+    double phase = (2.0 * M_PI) * (static_cast<double>(satId) / static_cast<double>(nSats));
+
+    double x, y, z;
+    OrbitEcef(tSec, altM, incRad, phase, x, y, z);
+
+    double latDeg, lonDeg, altOut;
+    EcefToLla(x, y, z, latDeg, lonDeg, altOut);
+
+    (*csv) << std::fixed << std::setprecision(6)
+           << tSec << "," << satId << ","
+           << latDeg << "," << lonDeg << ","
+           << altOut << "\n";
+  }
+
+  // schedule next
+  if (tSec + stepSec <= Simulator::GetMaximumSimulationTime().GetSeconds())
+  {
+    Simulator::Schedule(Seconds(stepSec), &LogPositions, csv, nSats, altM, incRad, tSec + stepSec, stepSec);
+  }
+}
+
+int main(int argc, char *argv[])
+{
+  uint32_t nSats = 6;
+  double altM = 600e3;          // 600 km
+  double incDeg = 53.0;         // 53 deg
+  double simLength = 300.0;     // seconds
+  double stepSec = 10.0;
+  std::string outCsv = "leo_positions.csv";
+
+  CommandLine cmd;
+  cmd.AddValue("nSats", "Number of LEO satellites", nSats);
+  cmd.AddValue("altM", "Orbit altitude [m]", altM);
+  cmd.AddValue("incDeg", "Inclination [deg]", incDeg);
+  cmd.AddValue("simLength", "Simulation length [s]", simLength);
+  cmd.AddValue("stepSec", "Log step [s]", stepSec);
+  cmd.AddValue("outCsv", "Output CSV file", outCsv);
+  cmd.Parse(argc, argv);
+
+  std::ofstream csv(outCsv, std::ios::out | std::ios::trunc);
+  csv << "time,satId,lat,lon,alt\n";
+
+  Simulator::Stop(Seconds(simLength));
+  Simulator::Schedule(Seconds(0.0), &LogPositions, &csv, nSats, altM, incDeg * M_PI / 180.0, 0.0, stepSec);
+
+  Simulator::Run();
+  Simulator::Destroy();
+
+  csv.close();
+  return 0;
+}
