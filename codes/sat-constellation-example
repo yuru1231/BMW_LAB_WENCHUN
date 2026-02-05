@@ -1,0 +1,516 @@
+
+#include "ns3/applications-module.h"
+#include "ns3/config-store-module.h"
+#include "ns3/core-module.h"
+#include "ns3/internet-module.h"
+#include "ns3/mobility-module.h"
+#include "ns3/network-module.h"
+#include "ns3/satellite-module.h"
+#include "ns3/satellite-env-variables.h"
+#include "ns3/traffic-module.h"
+
+#include <chrono>
+#include <fstream>
+#include <sstream>
+#include <iomanip>
+#include <vector>
+#include <string>
+#include <memory>
+#include <iostream>
+
+using namespace ns3;
+
+NS_LOG_COMPONENT_DEFINE("sat-constellation-example");
+
+/* ============================================================
+ * UT/GW position tracing (snapshot + timeseries)
+ * ============================================================ */
+
+enum class PosTraceMode : uint32_t
+{
+  SNAPSHOT = 0,
+  TIMESERIES = 1,
+  BOTH = 2
+};
+
+static std::string
+ModeToString(PosTraceMode m)
+{
+  switch (m)
+  {
+    case PosTraceMode::SNAPSHOT: return "snapshot";
+    case PosTraceMode::TIMESERIES: return "timeseries";
+    case PosTraceMode::BOTH: return "both";
+  }
+  return "unknown";
+}
+
+struct PosTraceConfig
+{
+  bool enabled = false;
+  PosTraceMode mode = PosTraceMode::BOTH;
+
+  // Simulation-time control
+  double startTimeSec = 1.0;       // warm-up start for time-series
+  double stopTimeSec  = 30.0;      // will be set from simTime
+  double dtSec        = 1.0;       // sampling period (simulation time)
+  double snapshotTimeSec = 0.0;    // label only (we write immediately)
+
+  // I/O control
+  uint32_t flushEvery = 10;        // flush every N samples (timeseries)
+  uint32_t ioBufferKiB = 1024;     // stream buffer KiB
+
+  // Output
+  std::string outputPath;          // traces folder
+};
+
+class UtGwPosTracer
+{
+public:
+  UtGwPosTracer(const PosTraceConfig& cfg,
+                const NodeContainer& uts,
+                const NodeContainer& gws)
+    : m_cfg(cfg),
+      m_uts(uts),
+      m_gws(gws)
+  {}
+
+  void InitFiles()
+  {
+    if (!m_cfg.enabled)
+      return;
+
+    std::string out = m_cfg.outputPath;
+    if (!out.empty() && out.back() == '/')
+      out.pop_back();
+
+    // Snapshot files
+    if (m_cfg.mode == PosTraceMode::SNAPSHOT || m_cfg.mode == PosTraceMode::BOTH)
+    {
+      m_utSnapshot.open((out + "/ut_positions_xyz_snapshot.csv").c_str(), std::ios::out);
+      m_gwSnapshot.open((out + "/gw_positions_xyz_snapshot.csv").c_str(), std::ios::out);
+      SetupBuffer(m_utSnapshot);
+      SetupBuffer(m_gwSnapshot);
+      WriteHeader(m_utSnapshot);
+      WriteHeader(m_gwSnapshot);
+      m_utSnapshot.flush();
+      m_gwSnapshot.flush();
+    }
+
+    // Timeseries files
+    if (m_cfg.mode == PosTraceMode::TIMESERIES || m_cfg.mode == PosTraceMode::BOTH)
+    {
+      m_utSeries.open((out + "/ut_positions_xyz_timeseries.csv").c_str(), std::ios::out);
+      m_gwSeries.open((out + "/gw_positions_xyz_timeseries.csv").c_str(), std::ios::out);
+      SetupBuffer(m_utSeries);
+      SetupBuffer(m_gwSeries);
+      WriteHeader(m_utSeries);
+      WriteHeader(m_gwSeries);
+      m_utSeries.flush();
+      m_gwSeries.flush();
+    }
+
+    NS_LOG_UNCOND("[PosTrace] enabled mode=" << ModeToString(m_cfg.mode)
+                  << " outputPath=" << out
+                  << " start=" << m_cfg.startTimeSec
+                  << " dt=" << m_cfg.dtSec
+                  << " stop=" << m_cfg.stopTimeSec
+                  << " flushEvery=" << m_cfg.flushEvery);
+  }
+
+  // Snapshot does NOT depend on event loop: write immediately at current Simulator::Now() (typically 0)
+  void WriteSnapshotNow()
+  {
+    if (!m_cfg.enabled)
+      return;
+
+    if (!(m_cfg.mode == PosTraceMode::SNAPSHOT || m_cfg.mode == PosTraceMode::BOTH))
+      return;
+
+    DoSnapshot();
+    CloseSnapshotFiles();
+  }
+
+  void ScheduleTimeseries()
+  {
+    if (!m_cfg.enabled)
+      return;
+
+    if (!(m_cfg.mode == PosTraceMode::TIMESERIES || m_cfg.mode == PosTraceMode::BOTH))
+      return;
+
+    const double t0 = Clamp(m_cfg.startTimeSec, 0.0, m_cfg.stopTimeSec);
+    Simulator::Schedule(Seconds(t0), &UtGwPosTracer::DoSample, this);
+    Simulator::ScheduleDestroy(&UtGwPosTracer::CloseAll, this);
+  }
+
+private:
+  static double Clamp(double v, double lo, double hi)
+  {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+  }
+
+  void SetupBuffer(std::ofstream& f)
+  {
+    if (!f.is_open())
+      return;
+
+    const size_t bytes = static_cast<size_t>(m_cfg.ioBufferKiB) * 1024;
+    m_ownedBuffers.emplace_back(std::make_unique<std::vector<char>>(bytes));
+    f.rdbuf()->pubsetbuf(m_ownedBuffers.back()->data(),
+                         static_cast<std::streamsize>(m_ownedBuffers.back()->size()));
+  }
+
+  void WriteHeader(std::ofstream& f)
+  {
+    if (!f.is_open())
+      return;
+    f << "time_sec,role,nodeId,x_m,y_m,z_m\n";
+  }
+
+  void WriteOneContainer(std::ofstream& f, const NodeContainer& nodes, const char* role)
+  {
+    if (!f.is_open())
+      return;
+
+    const double now = Simulator::Now().GetSeconds();
+
+    std::ostringstream buf;
+    buf.setf(std::ios::scientific);
+    buf << std::setprecision(8);
+
+    for (uint32_t i = 0; i < nodes.GetN(); ++i)
+    {
+      Ptr<Node> n = nodes.Get(i);
+      Ptr<MobilityModel> mob = n->GetObject<MobilityModel>();
+      if (!mob) continue;
+
+      Vector p = mob->GetPosition();
+      buf << now << "," << role << "," << n->GetId()
+          << "," << p.x << "," << p.y << "," << p.z << "\n";
+    }
+
+    f << buf.str();
+  }
+
+  void DoSnapshot()
+  {
+    if (m_utSnapshot.is_open())
+      WriteOneContainer(m_utSnapshot, m_uts, "UT");
+    if (m_gwSnapshot.is_open())
+      WriteOneContainer(m_gwSnapshot, m_gws, "GW");
+
+    if (m_utSnapshot.is_open()) m_utSnapshot.flush();
+    if (m_gwSnapshot.is_open()) m_gwSnapshot.flush();
+
+    NS_LOG_UNCOND("[PosTrace] snapshot done at t=" << Simulator::Now().GetSeconds()
+                  << " UTs=" << m_uts.GetN() << " GWs=" << m_gws.GetN());
+  }
+
+  void DoSample()
+  {
+    const double now = Simulator::Now().GetSeconds();
+    if (now > m_cfg.stopTimeSec + 1e-9)
+      return;
+
+    if (m_utSeries.is_open())
+      WriteOneContainer(m_utSeries, m_uts, "UT");
+    if (m_gwSeries.is_open())
+      WriteOneContainer(m_gwSeries, m_gws, "GW");
+
+    m_sampleCount++;
+
+    if (m_cfg.flushEvery > 0 && (m_sampleCount % m_cfg.flushEvery == 0))
+    {
+      if (m_utSeries.is_open()) m_utSeries.flush();
+      if (m_gwSeries.is_open()) m_gwSeries.flush();
+    }
+
+    const double next = now + m_cfg.dtSec;
+    if (next > m_cfg.stopTimeSec + 1e-9)
+      return;
+
+    Simulator::Schedule(Seconds(m_cfg.dtSec), &UtGwPosTracer::DoSample, this);
+  }
+
+  void CloseSnapshotFiles()
+  {
+    if (m_utSnapshot.is_open()) { m_utSnapshot.flush(); m_utSnapshot.close(); }
+    if (m_gwSnapshot.is_open()) { m_gwSnapshot.flush(); m_gwSnapshot.close(); }
+  }
+
+  void CloseAll()
+  {
+    CloseSnapshotFiles();
+    if (m_utSeries.is_open()) { m_utSeries.flush(); m_utSeries.close(); }
+    if (m_gwSeries.is_open()) { m_gwSeries.flush(); m_gwSeries.close(); }
+  }
+
+private:
+  PosTraceConfig m_cfg;
+  NodeContainer m_uts;
+  NodeContainer m_gws;
+
+  std::ofstream m_utSnapshot;
+  std::ofstream m_gwSnapshot;
+  std::ofstream m_utSeries;
+  std::ofstream m_gwSeries;
+
+  uint32_t m_sampleCount = 0;
+  std::vector<std::unique_ptr<std::vector<char>>> m_ownedBuffers;
+};
+
+static PosTraceMode
+ParseMode(uint32_t v)
+{
+  if (v == 0) return PosTraceMode::SNAPSHOT;
+  if (v == 1) return PosTraceMode::TIMESERIES;
+  return PosTraceMode::BOTH;
+}
+
+/* ============================================================
+ * ProgressTick (simTime + wall)
+ * ============================================================ */
+
+static std::chrono::steady_clock::time_point gWallT0;
+static bool gWallT0Set = false;
+
+// Stop time for ProgressTick (set after CLI parse)
+static double gProgressStopSimSec = -1.0;
+
+static void
+ProgressTick()
+{
+  using namespace std::chrono;
+
+  const double sim  = Simulator::Now().GetSeconds();
+  const double wall = gWallT0Set ? duration<double>(steady_clock::now() - gWallT0).count() : -1.0;
+
+  std::cout.setf(std::ios::fixed);
+  std::cout << std::setprecision(3);
+  NS_LOG_UNCOND("[Progress] simTime=" << sim << "s  wall=+" << wall << "s");
+
+  // avoid endless log spam after stop
+  if (gProgressStopSimSec > 0.0 && (sim + 1.0) <= gProgressStopSimSec + 1e-9)
+  {
+    Simulator::Schedule(Seconds(1.0), &ProgressTick);
+  }
+}
+
+/* ============================================================
+ * main
+ * ============================================================ */
+
+int
+main(int argc, char* argv[])
+{
+  // ---- wall clock helper ----
+  auto WallNow = [](){
+    using namespace std::chrono;
+    return duration<double>(steady_clock::now().time_since_epoch()).count();
+  };
+
+  // ---- default vars ----
+  uint32_t packetSize = 512;
+  std::string interval = "20ms";
+  std::string scenarioFolder = "constellation-eutelsat-geo-2-sats-isls";
+  double simTime = 30.0;
+
+  // Output path (traces folder)
+  std::string outputPath = "";
+
+  // Position trace CLI
+  uint32_t enableUtGwPosTrace = 0;
+  uint32_t posTraceMode = 2; // 0=snapshot,1=timeseries,2=both
+  double posTraceStartTime = 5.0;
+  double posTraceStopTime  = -1.0; // default: simTime
+  double posDt = 1.0;
+  double snapshotTime = 0.0;
+  uint32_t posTraceFlushEvery = 10;
+  uint32_t posTraceIoBufferKiB = 1024;
+
+  // Snapshot-only fast exit
+  uint32_t posTraceExitAfterSnapshot = 0;
+
+  // ---- SimulationHelper ----
+  Ptr<SimulationHelper> simulationHelper =
+    CreateObject<SimulationHelper>("example-constellation");
+
+  /* ---------------- CLI ---------------- */
+  CommandLine cmd;
+  cmd.AddValue("packetSize", "Size of constant packet (bytes)", packetSize);
+  cmd.AddValue("interval", "CBR interval (e.g. 20ms)", interval);
+  cmd.AddValue("scenarioFolder", "Scenario folder name", scenarioFolder);
+  cmd.AddValue("simTime", "Simulation time (seconds)", simTime);
+
+  cmd.AddValue("OutputPath", "Output path for storing the simulation statistics", outputPath);
+
+  cmd.AddValue("enableUtGwPosTrace", "Enable UT/GW position trace (0/1)", enableUtGwPosTrace);
+  cmd.AddValue("posTraceMode", "Position trace mode: 0=snapshot,1=timeseries,2=both", posTraceMode);
+  cmd.AddValue("posTraceStartTime", "Time-series warm-up start time (seconds)", posTraceStartTime);
+  cmd.AddValue("posTraceStopTime", "Time-series stop time (seconds, -1 means simTime)", posTraceStopTime);
+  cmd.AddValue("posDt", "Time-series sampling period (seconds)", posDt);
+  cmd.AddValue("snapshotTime", "Snapshot time label (seconds)", snapshotTime);
+  cmd.AddValue("posTraceFlushEvery", "Flush every N samples (timeseries)", posTraceFlushEvery);
+  cmd.AddValue("posTraceIoBufferKiB", "Stream buffer size (KiB) for trace files", posTraceIoBufferKiB);
+
+  cmd.AddValue("posTraceExitAfterSnapshot",
+               "Exit immediately after snapshot (0/1). Use with posTraceMode=0.",
+               posTraceExitAfterSnapshot);
+
+  simulationHelper->AddDefaultUiArguments(cmd);
+  cmd.Parse(argc, argv);
+
+  // ---- baseline for ProgressTick wall ----
+  gWallT0 = std::chrono::steady_clock::now();
+  gWallT0Set = true;
+
+  /* ---------------- Config ---------------- */
+  Config::SetDefault("ns3::SatConf::ForwardLinkRegenerationMode",
+                     EnumValue(SatEnums::REGENERATION_NETWORK));
+  Config::SetDefault("ns3::SatConf::ReturnLinkRegenerationMode",
+                     EnumValue(SatEnums::REGENERATION_NETWORK));
+
+  Config::SetDefault("ns3::SatSGP4MobilityModel::UpdatePositionEachRequest",
+                     BooleanValue(false));
+  Config::SetDefault("ns3::SatSGP4MobilityModel::UpdatePositionPeriod",
+                     TimeValue(Seconds(10)));
+
+  Config::SetDefault("ns3::SatHelper::PacketTraceEnabled", BooleanValue(false));
+  Config::SetDefault("ns3::SatEnvVariables::EnableSimulationOutputOverwrite",
+                     BooleanValue(true));
+
+  /* ---------------- Scenario ---------------- */
+  simulationHelper->LoadScenario(scenarioFolder);
+  simulationHelper->SetSimulationTime(Seconds(simTime));
+
+  std::set<uint32_t> beamSet = {43, 30};
+  std::set<uint32_t> beamSetTelesat = {1, 43, 60, 64};
+
+  if (scenarioFolder == "constellation-telesat-351-sats")
+  {
+    simulationHelper->SetBeamSet(beamSetTelesat);
+  }
+  else
+  {
+    simulationHelper->SetBeamSet(beamSet);
+  }
+
+  simulationHelper->SetUserCountPerUt(2);
+  LogComponentEnable("sat-constellation-example", LOG_LEVEL_INFO);
+
+  /* ---------------- WALL checkpoint: CreateSatScenario ---------------- */
+  const double w0 = WallNow();
+  NS_LOG_UNCOND("[WALL] before CreateSatScenario t=" << w0);
+
+  simulationHelper->CreateSatScenario();
+
+  const double w1 = WallNow();
+  NS_LOG_UNCOND("[WALL] after CreateSatScenario dt=" << (w1 - w0) << "s");
+
+  /* ---------------- Position tracing ---------------- */
+  PosTraceConfig pt;
+  pt.enabled = (enableUtGwPosTrace != 0);
+  pt.mode = ParseMode(posTraceMode);
+  pt.startTimeSec = posTraceStartTime;
+  pt.dtSec = posDt;
+  pt.snapshotTimeSec = snapshotTime;
+  pt.flushEvery = posTraceFlushEvery;
+  pt.ioBufferKiB = posTraceIoBufferKiB;
+
+  pt.stopTimeSec = (posTraceStopTime > 0.0) ? posTraceStopTime : simTime;
+
+  pt.outputPath = outputPath;
+  if (pt.outputPath.empty())
+  {
+    pt.outputPath = Singleton<SatEnvVariables>::Get()->GetOutputPath();
+  }
+
+  // ProgressTick stop boundary = simulation stop time
+  gProgressStopSimSec = simTime;
+
+  // Keep tracer alive for scheduled callbacks
+  static std::unique_ptr<UtGwPosTracer> tracer;
+
+  if (pt.enabled)
+  {
+    NodeContainer uts = Singleton<SatTopology>::Get()->GetUtNodes();
+    NodeContainer gws = Singleton<SatTopology>::Get()->GetGwNodes();
+
+    tracer = std::make_unique<UtGwPosTracer>(pt, uts, gws);
+    tracer->InitFiles();
+
+    // Snapshot-only fast exit: write snapshot and stop immediately (no RunSimulation)
+    if (pt.mode == PosTraceMode::SNAPSHOT && posTraceExitAfterSnapshot != 0)
+    {
+      tracer->WriteSnapshotNow();
+      return 0;
+    }
+
+    // In BOTH mode, write snapshot immediately (optional)
+    if (pt.mode == PosTraceMode::BOTH)
+    {
+      tracer->WriteSnapshotNow();
+    }
+
+    tracer->ScheduleTimeseries();
+  }
+
+  /* ---------------- Traffic (optional) ---------------- */
+  Config::SetDefault("ns3::CbrApplication::Interval", StringValue(interval));
+  Config::SetDefault("ns3::CbrApplication::PacketSize", UintegerValue(packetSize));
+
+  Time startTime = Seconds(1.0);
+  Time stopTime  = Seconds(simTime - 1.0);
+
+  NodeContainer gwUsers = Singleton<SatTopology>::Get()->GetGwUserNodes();
+  NodeContainer uts = Singleton<SatTopology>::Get()->GetUtNodes();
+  NodeContainer utUsers = Singleton<SatTopology>::Get()->GetUtUserNodes(uts);
+
+  Ptr<SatTrafficHelper> trafficHelper = simulationHelper->GetTrafficHelper();
+
+  // Uncomment only if you really need traffic now
+  /*
+  trafficHelper->AddCbrTraffic(SatTrafficHelper::FWD_LINK,
+                               SatTrafficHelper::UDP,
+                               Time(interval),
+                               packetSize,
+                               gwUsers,
+                               utUsers,
+                               startTime,
+                               stopTime,
+                               Seconds(0.0));
+  */
+
+  /* ---------------- Statistics (optional) ---------------- */
+  Config::SetDefault("ns3::ConfigStore::Filename", StringValue("output-attributes.xml"));
+  Config::SetDefault("ns3::ConfigStore::FileFormat", StringValue("Xml"));
+  Config::SetDefault("ns3::ConfigStore::Mode", StringValue("Save"));
+
+  ConfigStore outputConfig;
+  outputConfig.ConfigureDefaults();
+
+  /*
+  Ptr<SatStatsHelperContainer> s = simulationHelper->GetStatisticsContainer();
+  s->AddGlobalFwdAppThroughput(SatStatsHelper::OUTPUT_SCATTER_FILE);
+  s->AddGlobalRtnAppThroughput(SatStatsHelper::OUTPUT_SCATTER_FILE);
+  s->AddGlobalPacketDropRate(SatStatsHelper::OUTPUT_SCATTER_FILE);
+  */
+
+  /* ---------------- WALL checkpoint: RunSimulation ---------------- */
+  const double w2 = WallNow();
+  NS_LOG_UNCOND("[WALL] before RunSimulation dt_since_create=" << (w2 - w1) << "s");
+
+  // Schedule progress tick at t=0
+  Simulator::Schedule(Seconds(0.0), &ProgressTick);
+
+  // Run
+  simulationHelper->RunSimulation();
+
+  const double w3 = WallNow();
+  NS_LOG_UNCOND("[WALL] after RunSimulation dt=" << (w3 - w2) << "s total=" << (w3 - w0) << "s");
+
+  return 0;
+}
