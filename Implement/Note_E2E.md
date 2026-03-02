@@ -205,7 +205,7 @@ Outputs:
 
 ---
 
-## 7. Baseline 假設（先簡化也沒關係，但要寫）
+## 7. Baseline 假設
 
 baseline ：
 
