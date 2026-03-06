@@ -7173,3 +7173,9 @@ Progress: 66/300
 Process was interrupted by the user
 ```
 - heavy running.
+
+candidate_sats.csv
+```
+time,satId,in_tw
+65	221	1
+```
