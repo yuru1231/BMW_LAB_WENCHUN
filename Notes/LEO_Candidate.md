@@ -1,6 +1,6 @@
 # ISL & LEO Candidate
 ## 1. ISL Routing Lock
-`UT → Sat-A → Sat-B → FT`\
+`UT → Sat-A → Sat-B → FT`
 
 原ISL建立條件為:
 - 編號相鄰的衛星在模擬全程都會通, 或是`sat_positions_xyz_timeseries.csv `裡面計算距離在2500KM會通
