@@ -1,0 +1,29 @@
+	
+milestone	"M0_scope_freeze"
+tier	"tier2_beam_hopping_schedule"
+owner	"Lucy"
+created_date	"2026-02-10"
+scope	
+locked_satellite_id	"Sat_X"
+cells	
+0	"A"
+1	"B"
+2	"C"
+tcycle_ms	10
+gate_mode	"rate_gate"
+assumptions	
+0	"Tier2 focuses on time-slicing across cells on ONE locked satellite"
+1	"No routing changes in Tier2 (Tier1 already provides a locked path)"
+2	"No UT-level scheduling in Tier2 (reserved for Tier3)"
+io_contract	
+input_files	
+0	"inputs/cells.json"
+1	"inputs/demand.json"
+expected_next_outputs	
+0	"inputs/pattern.csv (generated in W2)"
+1	"logs/beam_hop_events.log (generated in W4)"
+2	"traces/throughput_per_cell.csv (generated in W5)"
+reproducibility	
+rng_seed	1
+rng_run	1
+time_unit	"us"
