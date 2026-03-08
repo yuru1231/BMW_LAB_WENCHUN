@@ -32,7 +32,7 @@ Tier3     QoS traffic validation
 # I/O
 ## tier 1
 ###  Node position timeseries
-[sat-constellation-example]()
+[sat-constellation-example](https://github.com/yuru1231/BMW_LAB_WENCHUN/blob/4f84bd73dc12d500dc81c50017967b90c4e36e59/1st/code/sat-constellation-example.cc)
 
 輸出:
 - sat_positions_xyz_timeseries.csv
@@ -40,9 +40,9 @@ Tier3     QoS traffic validation
 - ut_positions_xyz_timeseries.csv
 
 ###  build connectivity graph
-[build_connectivity.py]()
+[build_connectivity.py](https://github.com/yuru1231/BMW_LAB_WENCHUN/blob/319d2d6054183513dafd4f71c79bce351d89afb5/1st/code/build_connectivity.py)
 
-[meta.json]()
+[meta.json](https://github.com/yuru1231/BMW_LAB_WENCHUN/blob/4f84bd73dc12d500dc81c50017967b90c4e36e59/1st/code/meta.json)
 
 輸出:
 - connectivity_timeseries.csv
@@ -50,7 +50,7 @@ Tier3     QoS traffic validation
 
 ### SRC_NODE → DST_NODE:最穩路徑
 `score = -hop_count + continuity_bonus`
-[a3_stable_path.py]()
+[a3_stable_path.py](https://github.com/yuru1231/BMW_LAB_WENCHUN/blob/319d2d6054183513dafd4f71c79bce351d89afb5/1st/code/a3_stable_path.py)
 
 輸入:
 connectivity_timeseries.csv
@@ -60,7 +60,7 @@ connectivity_timeseries.csv
 - golden_path_summary.json
 
 ### Routing abstraction finalization
-[phase_b_extract_golden_path.py]()
+[phase_b_extract_golden_path.py](https://github.com/yuru1231/BMW_LAB_WENCHUN/blob/319d2d6054183513dafd4f71c79bce351d89afb5/1st/code/phase_b_extract_golden_path.py)
 
 輸出:
 - golden_path.txt
@@ -76,12 +76,12 @@ t_us, cell, enabled
 5000,A,0
 5000,B,1
 ```
-驗證 gate:[w3_gate_smoke.cc]()
-驗證 pattern reader:[w4_pattern_smoke.cc]()
+驗證 gate:[w3_gate_smoke.cc](https://github.com/yuru1231/BMW_LAB_WENCHUN/blob/319d2d6054183513dafd4f71c79bce351d89afb5/1st/code/w3_gate_smoke.cc)\
+驗證 pattern reader:[w4_pattern_smoke.cc](https://github.com/yuru1231/BMW_LAB_WENCHUN/blob/319d2d6054183513dafd4f71c79bce351d89afb5/1st/code/w4_pattern_smoke.cc)
 
 ## tier 2.5 Window Metrics
 Control plane → Data plane bridge
-[w25_tier2p5_window_metrics.cc]()
+[w25_tier2p5_window_metrics.cc](https://github.com/yuru1231/BMW_LAB_WENCHUN/blob/319d2d6054183513dafd4f71c79bce351d89afb5/1st/code/w25_tier2p5_window_metrics.cc)
 輸出:
 - beam_hop_events.log
 - throughput_per_cell.csv
@@ -89,7 +89,7 @@ Control plane → Data plane bridge
 
 ## tier 3 QoS Validation
 建立 traffic classes：Gold/Silver/Bronze
-[w3_tier3_qos_singlecell.cc]()
+[w3_tier3_qos_singlecell.cc](https://github.com/yuru1231/BMW_LAB_WENCHUN/blob/319d2d6054183513dafd4f71c79bce351d89afb5/1st/code/w3_tier3_qos_singlecell.cc)
 
 輸出:
 - qos_metrics.csv
