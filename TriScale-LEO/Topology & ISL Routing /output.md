@@ -1,3 +1,19 @@
+```
+./ns3 run "isl-leo-candidate 
+--mode=d1_final 
+--scenarioFolder=$SCENARIO_DIR 
+--simTime=30  //模擬時間
+--tStart=0 //candidate scan time
+--tEnd=30 //candidate scan time
+--dt=1  //每秒算一次candidate
+--planWindow=30 //routing plan 每 30 秒更新一次
+--refLat=25.0330   //UT reference location
+--refLon=121.5654  //UT reference location(TPE)
+--elevDeg=20  //candidate satellite 條件 >= 20°
+--gwIndex=0  //scenario 有：GW0 GW1;target:UT → constellation → GW0
+--statsLevel=min  //輸出 minimal debugging
+```
+
 `routing_plan.csv`
 ```
 time_start  time_end  serving_sat  path                                                             hop_count  status  gw_index  reason
