@@ -17,7 +17,7 @@
 
 ---
 
-## 1.2 D1 輸出的意義
+## 1.2 輸出的意義
 
 - **candidate_sats.csv**：目前哪些衛星對台北可視、是否可達 gateway、候選條件是否成立
 - **isl_connectivity.csv**：衛星與衛星之間的幾何距離與真實 ISL link 是否存在
@@ -51,7 +51,7 @@
 
 ## 3.1 主程式
 
-主程式名稱：`scratch/isl-leo-candidate.cc`
+主程式名稱：[`scratch/isl-leo-candidate.cc`]()
 
 負責：
 - scenario 初始化
