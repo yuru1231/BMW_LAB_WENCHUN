@@ -1,3 +1,7 @@
+目前 dynamic ISL 已成功影響 routing feasibility，但在 3000 km 門檻下，candidate satellites 雖可見卻無法 reach GW，導致所有 planning windows 均無法生成 routing plan。因此，下一步需先校準 dynamic ISL availability model，再評估 routing stability during service window。
+
+
+
 config:
 ```
 wenj@ubuntu-sns32:~/workspace/ns-3.43$ ./ns3 run "isl-leo-candidate \
