@@ -84,3 +84,14 @@ Update not-served counters
     ↓
 Schedule next RunNextWindow()
 ```
+|函數|說明|
+|-|-|
+|InitializeCellMapping()|建立 cell ID、userCount 對應表|
+|InitializeBhController()|狀態機重置為 BH_INIT|
+|ReadCellDemands()|讀取（或模擬）各 cell 的 Mbps 需求|
+|SelectCellsForWindow()|依 demand 降序選出本輪 top-N cells|
+|AllocateDwellTime()|按 demand 比例分配 dwell time，強制最小值|
+|GenerateSwitchAwareSchedule()|插入 guard interval 產生完整 slot 序列|
+|ExecuteBeamGating()|非同步 Simulator::Schedule 觸發每個 slot|
+|WriteWindowLog()|每輪結束輸出表格到 .log 檔|
+|RunNextWindow()|自動排程下一輪，形成週期迴圈|
